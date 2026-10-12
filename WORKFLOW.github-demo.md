@@ -7,7 +7,7 @@ tracker:
   terminalStates: ["closed"]
   assignee: "ceyhunozgun"
 workspace:
-  rootDir: /tmp/hatice-workspaces
+  rootDir: /tmp/hatice-workspaces-preview
 preview:
   enabled: true
   basePort: 3100
