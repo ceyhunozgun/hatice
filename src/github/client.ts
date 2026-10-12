@@ -17,11 +17,6 @@ interface GitHubIssueNode {
   updatedAt: string;
   assignees: { nodes: Array<{ login: string; id: string }> };
   labels: { nodes: Array<{ name: string }> };
-  projectItems: {
-    nodes: Array<{
-      fieldValueByName: { name: string } | null;
-    }>;
-  };
   trackedInIssues: {
     nodes: Array<{
       id: string;
@@ -62,11 +57,6 @@ const ISSUES_QUERY = `
           updatedAt
           assignees(first: 10) { nodes { login id } }
           labels(first: 20) { nodes { name } }
-          projectItems(first: 5) {
-            nodes {
-              fieldValueByName(name: "Status") { ... on ProjectV2ItemFieldSingleSelectValue { name } }
-            }
-          }
           trackedInIssues(first: 10) { nodes { id number state } }
         }
         pageInfo { hasNextPage endCursor }
@@ -89,11 +79,6 @@ const ISSUES_BY_IDS_QUERY = `
         updatedAt
         assignees(first: 10) { nodes { login id } }
         labels(first: 20) { nodes { name } }
-        projectItems(first: 5) {
-          nodes {
-            fieldValueByName(name: "Status") { ... on ProjectV2ItemFieldSingleSelectValue { name } }
-          }
-        }
         trackedInIssues(first: 10) { nodes { id number state } }
       }
     }
@@ -175,12 +160,9 @@ export class GitHubClient {
   private normalizeIssue(node: GitHubIssueNode): Issue {
     const identifier = `${this.owner}/${this.repo}#${node.number}`;
 
-    // Derive state from project items (GitHub Projects V2 status) or fallback to issue state
-    let state: string = node.state === 'OPEN' ? 'Open' : 'Closed';
-    const projectItem = node.projectItems?.nodes?.[0];
-    if (projectItem?.fieldValueByName?.name) {
-      state = projectItem.fieldValueByName.name;
-    }
+    // Use native issue state (Open/Closed). Avoid Projects V2 fields so
+    // standard `repo`-scoped tokens work without `read:project`.
+    const state: string = node.state === 'OPEN' ? 'Open' : 'Closed';
 
     // Lowercase all labels
     const labels = node.labels.nodes.map((l) => l.name.toLowerCase());

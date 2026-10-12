@@ -47,10 +47,12 @@ function createTestConfig(overrides: Partial<haticeConfig> = {}): haticeConfig {
       timeoutMs: 60_000,
     },
     agent: {
+      provider: 'claude' as const,
       maxConcurrentAgents: 2,
       maxTurns: 20,
       maxRetryBackoffMs: 300_000,
       maxConcurrentAgentsByState: {},
+      retryOnNormalExit: false,
     },
     claude: {
       model: null,
@@ -60,6 +62,10 @@ function createTestConfig(overrides: Partial<haticeConfig> = {}): haticeConfig {
       allowedTools: null,
       disallowedTools: null,
       systemPrompt: null,
+      canUseTool: null,
+      claudeCodePath: null,
+      autoRespondToInput: false,
+      dryRun: false,
     },
     server: { port: null, host: '127.0.0.1' },
     ...overrides,
@@ -232,6 +238,7 @@ describe('dispatch-cycle integration', () => {
 
     const config = createTestConfig({
       agent: {
+        provider: 'claude' as const,
         maxConcurrentAgents: 2,
         maxTurns: 20,
         maxRetryBackoffMs: 300_000,

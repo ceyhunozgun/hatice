@@ -52,6 +52,7 @@ function createTestConfig(overrides: Partial<haticeConfig> = {}): haticeConfig {
       timeoutMs: 60_000,
     },
     agent: {
+      provider: 'claude' as const,
       maxConcurrentAgents: 10,
       maxTurns: 20,
       maxRetryBackoffMs: 300_000,
@@ -69,6 +70,7 @@ function createTestConfig(overrides: Partial<haticeConfig> = {}): haticeConfig {
       canUseTool: null,
       claudeCodePath: null,
       autoRespondToInput: false,
+      dryRun: false,
     },
     server: { port: null, host: '127.0.0.1' },
     ...overrides,

@@ -140,6 +140,19 @@ tracker:
   terminalStates: ["closed"]
 ```
 
+Hatice can run agents through the local Codex CLI:
+
+```yaml
+agent:
+  provider: codex
+codex:
+  path: codex
+  sandbox: workspace-write
+  approvalPolicy: never
+  model: null
+  ephemeral: false
+```
+
 ### With GitLab (CE/EE)
 
 Works with both GitLab.com and self-hosted GitLab CE/EE instances.

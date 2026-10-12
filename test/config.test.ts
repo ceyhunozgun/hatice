@@ -109,6 +109,7 @@ describe('validateConfig', () => {
     expect(cfg.hooks.beforeRemove).toBeNull();
 
     // agent defaults
+    expect(cfg.agent.provider).toBe('claude');
     expect(cfg.agent.maxTurns).toBe(20);
     expect(cfg.agent.maxConcurrentAgents).toBe(10);
     expect(cfg.agent.maxRetryBackoffMs).toBe(300_000);

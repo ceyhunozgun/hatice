@@ -53,7 +53,7 @@ export type {
   Issue, BlockerRef, RunningEntry, RetryState,
   TokenUsage, AggregateTotals, WorkerResult,
   haticeConfig, TrackerConfig, PollingConfig, WorkspaceConfig,
-  HooksConfig, AgentConfig, ClaudeConfig, ServerConfig,
+  HooksConfig, AgentConfig, ClaudeConfig, CodexConfig, ServerConfig,
   Tracker, Workflow, OrchestratorSnapshot, SnapshotRunningEntry, SnapshotRetryEntry,
   haticeEvents,
 } from './types.js';

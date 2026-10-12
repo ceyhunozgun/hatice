@@ -98,6 +98,7 @@ function makeConfig(overrides: Partial<haticeConfig> = {}): haticeConfig {
       timeoutMs: 60_000,
     },
     agent: {
+      provider: 'claude' as const,
       maxConcurrentAgents: 3,
       maxTurns: 10,
       maxRetryBackoffMs: 300_000,
@@ -112,6 +113,10 @@ function makeConfig(overrides: Partial<haticeConfig> = {}): haticeConfig {
       allowedTools: null,
       disallowedTools: null,
       systemPrompt: null,
+      canUseTool: null,
+      claudeCodePath: null,
+      autoRespondToInput: false,
+      dryRun: false,
     },
     server: { port: null, host: '127.0.0.1' },
     ...overrides,
@@ -270,7 +275,7 @@ describe('Orchestrator', () => {
       ];
       const tracker = new MemoryTracker(issues);
       const orch = createOrchestrator(tracker, {
-        agent: { maxConcurrentAgents: 3, maxTurns: 10, maxRetryBackoffMs: 300_000, maxConcurrentAgentsByState: {}, retryOnNormalExit: false },
+        agent: { provider: 'claude' as const, maxConcurrentAgents: 3, maxTurns: 10, maxRetryBackoffMs: 300_000, maxConcurrentAgentsByState: {}, retryOnNormalExit: false },
       });
 
       mockRunFn.mockReturnValue(new Promise(() => {}));
@@ -317,6 +322,7 @@ describe('Orchestrator', () => {
       const tracker = new MemoryTracker(issues);
       const orch = createOrchestrator(tracker, {
         agent: {
+          provider: 'claude' as const,
           maxConcurrentAgents: 10,
           maxTurns: 10,
           maxRetryBackoffMs: 300_000,
@@ -569,6 +575,7 @@ describe('Orchestrator', () => {
       const tracker = new MemoryTracker([issue]);
       const orch = createOrchestrator(tracker, {
         agent: {
+          provider: 'claude' as const,
           maxConcurrentAgents: 3,
           maxTurns: 10,
           maxRetryBackoffMs: 300_000,

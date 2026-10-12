@@ -157,8 +157,8 @@ describe('GitHubClient', () => {
       const issues = await client.fetchIssueStatesByIds(['I_kwDOA1', 'I_kwDOA2']);
 
       expect(issues).toHaveLength(2);
-      expect(issues[0].state).toBe('Todo');
-      expect(issues[1].state).toBe('In Progress');
+      expect(issues[0].state).toBe('Open');
+      expect(issues[1].state).toBe('Open');
     });
   });
 
