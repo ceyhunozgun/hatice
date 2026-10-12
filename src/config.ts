@@ -36,6 +36,7 @@ const hooksSchema = z.object({
 });
 
 const agentSchema = z.object({
+  provider: z.enum(['claude', 'codex']).default('claude'),
   maxConcurrentAgents: z.number().default(10),
   maxTurns: z.number().default(20),
   maxRetryBackoffMs: z.number().default(300_000),
@@ -43,9 +44,18 @@ const agentSchema = z.object({
   retryOnNormalExit: z.boolean().default(false),
 });
 
+const codexSchema = z.object({
+  path: z.string().default('codex'),
+  model: z.string().nullable().default(null),
+  sandbox: z.enum(['read-only', 'workspace-write', 'danger-full-access']).default('workspace-write'),
+  approvalPolicy: z.enum(['on-request', 'never']).default('never'),
+  ephemeral: z.boolean().default(false),
+});
+
 const claudeSchema = z.object({
   model: z.string().nullable().default(null),
   permissionMode: z.string().default('bypassPermissions'),
+  settingSources: z.array(z.enum(['user', 'project', 'local'])).nullable().default(['user', 'project', 'local']),
   turnTimeoutMs: z.number().default(3_600_000),
   stallTimeoutMs: z.number().default(300_000),
   allowedTools: z.array(z.string()).nullable().default(null),
@@ -74,15 +84,24 @@ const haticeConfigSchema = z.object({
     timeoutMs: 60_000,
   }),
   agent: agentSchema.default({
+    provider: 'claude',
     maxConcurrentAgents: 10,
     maxTurns: 20,
     maxRetryBackoffMs: 300_000,
     maxConcurrentAgentsByState: {},
     retryOnNormalExit: false,
   }),
+  codex: codexSchema.default({
+    path: 'codex',
+    model: null,
+    sandbox: 'workspace-write',
+    approvalPolicy: 'never',
+    ephemeral: false,
+  }),
   claude: claudeSchema.default({
     model: null,
     permissionMode: 'bypassPermissions',
+    settingSources: ['user', 'project', 'local'],
     turnTimeoutMs: 3_600_000,
     stallTimeoutMs: 300_000,
     allowedTools: null,
