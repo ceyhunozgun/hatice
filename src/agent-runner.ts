@@ -90,7 +90,12 @@ export class AgentRunner {
       // Aggregate usage
       if (turnResult.usage) {
         totalUsage = mergeUsage(totalUsage, turnResult.usage);
-        this.options.onTokenUsage?.(issue.id, totalUsage);
+        // Providers report usage while the turn is streaming. Those updates
+        // have already been forwarded to the orchestrator; only emit here as
+        // a fallback for providers that could not report it live.
+        if (!turnResult.usageReported) {
+          this.options.onTokenUsage?.(issue.id, totalUsage);
+        }
       }
 
       if (turnResult.sessionId) {
@@ -253,6 +258,8 @@ export class AgentRunner {
               cacheCreationInputTokens: u.cache_creation_input_tokens ?? 0,
               costUsd: (msg as any).total_cost_usd ?? 0,
             };
+            this.options.onTokenUsage?.(this.options.issue.id, result.usage);
+            result.usageReported = true;
           }
         }
       }
@@ -286,16 +293,11 @@ export class AgentRunner {
     }));
     this.sessionLog?.info({ provider: 'codex', binary: config.path }, 'Starting Codex agent');
 
-    const { stdout, stderr, code } = await spawnAndCapture(config.path, args, {
-      cwd: workspacePath,
-      env: process.env,
-      signal: abortController.signal,
-    });
-
     let sessionId: string | null = null;
     let usage: TokenUsage | null = null;
-    for (const line of stdout.split('\n')) {
-      if (!line.trim()) continue;
+    let usageReported = false;
+    const processCodexLine = (line: string): void => {
+      if (!line.trim()) return;
       try {
         const event = JSON.parse(line) as Record<string, any>;
         const eventType = typeof event.type === 'string' ? event.type : 'codex.event';
@@ -311,13 +313,22 @@ export class AgentRunner {
             cacheCreationInputTokens: 0,
             costUsd: 0,
           };
+          this.options.onTokenUsage?.(this.options.issue.id, usage);
+          usageReported = true;
         }
         this.options.onEvent?.(this.options.issue.id, eventType, JSON.stringify(event).slice(0, 200));
         this.sessionLog?.info({ type: eventType }, 'Codex agent event');
       } catch {
         this.options.onEvent?.(this.options.issue.id, 'output', line.slice(0, 200));
       }
-    }
+    };
+
+    const { stdout, stderr, code } = await spawnAndCapture(config.path, args, {
+      cwd: workspacePath,
+      env: process.env,
+      signal: abortController.signal,
+      onStdoutLine: processCodexLine,
+    });
     const detail = (stdout || stderr).slice(-2000);
     this.options.onEvent?.(this.options.issue.id, 'result', detail.slice(0, 200));
     this.sessionLog?.info({ code, stdoutLength: stdout.length }, 'Codex agent finished');
@@ -336,6 +347,7 @@ export class AgentRunner {
     return {
       isComplete: true,
       usage: usage ?? emptyTokenUsage(),
+      usageReported,
       sessionId: sessionId ?? this.sessionId ?? `codex-${Date.now()}`,
       prUrl,
     };
@@ -436,6 +448,7 @@ export class AgentRunner {
 interface TurnResult {
   isComplete: boolean;
   usage: TokenUsage | null;
+  usageReported?: boolean;
   sessionId: string | null;
   prUrl?: string | null;
 }
@@ -464,7 +477,7 @@ function delay(ms: number, signal?: AbortSignal): Promise<void> {
 function spawnAndCapture(
   command: string,
   args: string[],
-  opts: { cwd: string; env: NodeJS.ProcessEnv; signal: AbortSignal },
+  opts: { cwd: string; env: NodeJS.ProcessEnv; signal: AbortSignal; onStdoutLine?: (line: string) => void },
 ): Promise<{ stdout: string; stderr: string; code: number | null }> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
@@ -475,7 +488,16 @@ function spawnAndCapture(
 
     let stdout = '';
     let stderr = '';
-    child.stdout?.on('data', (chunk: Buffer) => { stdout += chunk.toString(); });
+    let stdoutLineBuffer = '';
+    child.stdout?.on('data', (chunk: Buffer) => {
+      const text = chunk.toString();
+      stdout += text;
+      if (!opts.onStdoutLine) return;
+      stdoutLineBuffer += text;
+      const lines = stdoutLineBuffer.split('\n');
+      stdoutLineBuffer = lines.pop() ?? '';
+      for (const line of lines) opts.onStdoutLine(line);
+    });
     child.stderr?.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
 
     const onAbort = () => {
@@ -494,6 +516,7 @@ function spawnAndCapture(
     });
     child.on('close', (code) => {
       opts.signal.removeEventListener('abort', onAbort);
+      if (opts.onStdoutLine && stdoutLineBuffer) opts.onStdoutLine(stdoutLineBuffer);
       resolve({ stdout, stderr, code });
     });
   });

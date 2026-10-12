@@ -53,6 +53,7 @@ function makeClaudeConfig(overrides: Partial<ClaudeConfig> = {}): ClaudeConfig {
     canUseTool: null,
     claudeCodePath: null,
     autoRespondToInput: false,
+    dryRun: false,
     ...overrides,
   };
 }
@@ -184,6 +185,7 @@ describe('AgentRunner', () => {
       inputTokens: 100,
       outputTokens: 50,
     }));
+    expect(onTokenUsage).toHaveBeenCalledTimes(1);
   });
 
   it('run: returns error result on agent failure', async () => {
@@ -482,6 +484,37 @@ describe('AgentRunner', () => {
     if (result.kind === 'normal') {
       expect(result.turnsCompleted).toBe(1);
     }
+  });
+
+  it('run: codex provider runs the configured binary and completes', async () => {
+    const { writeFile, chmod, mkdir } = await import('node:fs/promises');
+    const { join } = await import('node:path');
+    const { tmpdir } = await import('node:os');
+    const workspacePath = join(tmpdir(), `hatice-codex-ws-${process.pid}`);
+    await mkdir(workspacePath, { recursive: true });
+    const bin = join(tmpdir(), `hatice-fake-agent-${process.pid}.sh`);
+    await writeFile(bin, '#!/bin/sh\necho \'{"type":"thread.started","thread_id":"test-thread"}\'\necho \'{"type":"turn.completed","usage":{"input_tokens":10,"output_tokens":5}}\'\nexit 0\n');
+    await chmod(bin, 0o755);
+
+    const { AgentRunner } = await import('../src/agent-runner.js');
+    const onTokenUsage = vi.fn();
+    const runner = new AgentRunner(makeOptions({
+      provider: 'codex',
+      maxTurns: 1,
+      workspacePath,
+      codexConfig: { path: bin, model: null, sandbox: 'workspace-write', approvalPolicy: 'never', ephemeral: true },
+      onTokenUsage,
+    }));
+    const result = await runner.run();
+    if (result.kind !== 'normal') {
+      throw new Error(`expected normal, got ${result.kind}: ${'error' in result ? result.error.message : JSON.stringify(result)}`);
+    }
+    expect(result.turnsCompleted).toBe(1);
+    expect(onTokenUsage).toHaveBeenCalledTimes(1);
+    expect(onTokenUsage).toHaveBeenCalledWith('issue-1', expect.objectContaining({
+      inputTokens: 10,
+      outputTokens: 5,
+    }));
   });
 
   it('run: turn timeout produces TimeoutError when exceeded', async () => {
