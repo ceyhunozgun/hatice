@@ -236,6 +236,8 @@ export class Orchestrator extends EventEmitter<haticeEvents> {
         promptTemplate: workflow.promptTemplate,
         attempt,
         maxTurns: this.config.agent.maxTurns,
+        provider: this.config.agent.provider,
+        codexConfig: this.config.codex,
         claudeConfig: this.config.claude,
         trackerConfig: this.config.tracker,
         abortController,

@@ -66,7 +66,7 @@ export interface AggregateTotals {
 }
 
 export type WorkerResult =
-  | { kind: 'normal'; issueId: string; turnsCompleted: number; usage: TokenUsage; durationMs: number }
+  | { kind: 'normal'; issueId: string; turnsCompleted: number; usage: TokenUsage; durationMs: number; prUrl?: string | null }
   | { kind: 'error'; issueId: string; error: Error; attempt: number; durationMs: number }
   | { kind: 'cancelled'; issueId: string; reason: string };
 
@@ -78,6 +78,7 @@ export interface haticeConfig {
   hooks: HooksConfig;
   agent: AgentConfig;
   claude: ClaudeConfig;
+  codex?: CodexConfig;
   server: ServerConfig;
 }
 
@@ -108,11 +109,21 @@ export interface HooksConfig {
 }
 
 export interface AgentConfig {
+  /** Agent backend: Claude Code SDK (default) or Codex CLI */
+  provider: 'claude' | 'codex';
   maxConcurrentAgents: number;
   maxTurns: number;
   maxRetryBackoffMs: number;
   maxConcurrentAgentsByState: Record<string, number>;
   retryOnNormalExit: boolean;
+}
+
+export interface CodexConfig {
+  path: string;
+  model: string | null;
+  sandbox: 'read-only' | 'workspace-write' | 'danger-full-access';
+  approvalPolicy: 'on-request' | 'never';
+  ephemeral: boolean;
 }
 
 export interface ClaudeConfig {

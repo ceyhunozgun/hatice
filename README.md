@@ -109,10 +109,17 @@ tracker:
 workspace:
   rootDir: ~/workspaces
 agent:
+  provider: claude # or codex
   maxConcurrentAgents: 5
   maxTurns: 20
 claude:
   permissionMode: bypassPermissions
+codex:
+  path: codex
+  model: null
+  sandbox: workspace-write
+  approvalPolicy: never
+  ephemeral: false
 server:
   port: 4000
 ---
@@ -128,6 +135,25 @@ Work in the provided workspace. Write tests first, then implement. Commit when d
 ```bash
 npx tsx bin/hatice.ts start -w ./WORKFLOW.md --port 4000
 ```
+
+### With the Codex CLI
+
+Hatice can run agents through the local Codex CLI. Set `agent.provider` to
+`codex` and configure the Codex executable under `codex`:
+
+```yaml
+agent:
+  provider: codex
+codex:
+  path: codex
+  sandbox: workspace-write
+  approvalPolicy: never
+  model: null
+  ephemeral: false
+```
+
+Use `approvalPolicy: never` only in a trusted workspace; it enables unattended
+execution with Codex's bypass-approvals flag.
 
 ### With GitHub Issues
 

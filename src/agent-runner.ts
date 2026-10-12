@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process';
 import { PromptBuilder, issueToTemplateData } from './prompt-builder.js';
 import { AgentError } from './errors.js';
 import { TurnTimeout } from './turn-timeout.js';
@@ -5,7 +6,7 @@ import { InputHandler } from './input-handler.js';
 import type { SessionLogger } from './session-logger.js';
 import type { RateLimitTracker } from './rate-limiter.js';
 import type {
-  Issue, WorkerResult, TokenUsage, ClaudeConfig, TrackerConfig,
+  Issue, WorkerResult, TokenUsage, ClaudeConfig, CodexConfig, TrackerConfig, AgentConfig,
 } from './types.js';
 import { emptyTokenUsage } from './types.js';
 
@@ -15,6 +16,8 @@ export interface AgentRunnerOptions {
   promptTemplate: string;
   attempt: number;
   maxTurns: number;
+  provider?: AgentConfig['provider'];
+  codexConfig?: CodexConfig;
   claudeConfig: ClaudeConfig;
   trackerConfig: TrackerConfig;
   abortController: AbortController;
@@ -101,6 +104,7 @@ export class AgentRunner {
         turnsCompleted,
         usage: totalUsage,
         durationMs: Date.now() - startTime,
+        prUrl: turnResult.prUrl ?? null,
       };
     } catch (error: any) {
       this.sessionLog?.error({ error: error?.message }, 'Agent run failed');
@@ -137,6 +141,10 @@ export class AgentRunner {
     // Dry-run mode: simulate agent execution without spawning Claude
     if (this.options.claudeConfig.dryRun) {
       return this.simulateTurn(prompt, turn);
+    }
+
+    if ((this.options.provider ?? 'claude') === 'codex') {
+      return this.executeCodexTurn(prompt);
     }
 
     let sdkModule: any;
@@ -255,6 +263,72 @@ export class AgentRunner {
     return result;
   }
 
+  /** Run a Codex CLI session in the issue workspace. */
+  private async executeCodexTurn(prompt: string): Promise<TurnResult> {
+    const { workspacePath, abortController } = this.options;
+    const config = this.options.codexConfig ?? {
+      path: 'codex', model: null, sandbox: 'workspace-write' as const,
+      approvalPolicy: 'never' as const, ephemeral: false,
+    };
+    const args = ['exec', '--cd', workspacePath, '--json', '--sandbox', config.sandbox];
+    if (config.approvalPolicy === 'never') args.push('--dangerously-bypass-approvals-and-sandbox');
+    if (config.model) args.push('--model', config.model);
+    if (config.ephemeral) args.push('--ephemeral');
+    args.push(prompt);
+
+    this.options.onEvent?.(this.options.issue.id, 'system', JSON.stringify({
+      type: 'system', subtype: 'init', provider: 'codex', binary: config.path,
+    }));
+    this.sessionLog?.info({ provider: 'codex', binary: config.path }, 'Starting Codex agent');
+
+    const { stdout, stderr, code } = await spawnAndCapture(config.path, args, {
+      cwd: workspacePath,
+      env: process.env,
+      signal: abortController.signal,
+    });
+
+    let sessionId: string | null = null;
+    let usage: TokenUsage | null = null;
+    for (const line of stdout.split('\n')) {
+      if (!line.trim()) continue;
+      try {
+        const event = JSON.parse(line) as Record<string, any>;
+        const eventType = typeof event.type === 'string' ? event.type : 'codex.event';
+        if (eventType === 'thread.started' && typeof event.thread_id === 'string') sessionId = event.thread_id;
+        if (eventType === 'turn.completed' && event.usage) {
+          usage = {
+            inputTokens: event.usage.input_tokens ?? 0,
+            outputTokens: event.usage.output_tokens ?? 0,
+            totalTokens: (event.usage.input_tokens ?? 0) + (event.usage.output_tokens ?? 0),
+            cacheReadInputTokens: event.usage.cached_input_tokens ?? 0,
+            cacheCreationInputTokens: 0,
+            costUsd: 0,
+          };
+        }
+        this.options.onEvent?.(this.options.issue.id, eventType, JSON.stringify(event).slice(0, 200));
+        this.sessionLog?.info({ type: eventType }, 'Codex agent event');
+      } catch {
+        this.options.onEvent?.(this.options.issue.id, 'output', line.slice(0, 200));
+      }
+    }
+    const detail = (stdout || stderr).slice(-2000);
+    this.options.onEvent?.(this.options.issue.id, 'result', detail.slice(0, 200));
+    this.sessionLog?.info({ code, stdoutLength: stdout.length }, 'Codex agent finished');
+
+    if (abortController.signal.aborted) throw new AgentError('Codex agent aborted');
+    if (code !== 0) {
+      throw new AgentError(`Codex agent exited with code ${code}: ${(stderr || stdout).slice(0, 500)}`);
+    }
+
+    const prUrl = `${stdout}\n${stderr}`.match(/https:\/\/github\.com\/[^\s/]+\/[^\s/]+\/pull\/\d+/)?.[0] ?? null;
+    return {
+      isComplete: true,
+      usage: usage ?? emptyTokenUsage(),
+      sessionId: sessionId ?? this.sessionId ?? `codex-${Date.now()}`,
+      prUrl,
+    };
+  }
+
   /** Simulate a turn for demo/dry-run mode without spawning real agents */
   private async simulateTurn(_prompt: string, turn: number): Promise<TurnResult> {
     // Simulate processing time (1-3 seconds)
@@ -351,6 +425,7 @@ interface TurnResult {
   isComplete: boolean;
   usage: TokenUsage | null;
   sessionId: string | null;
+  prUrl?: string | null;
 }
 
 function mergeUsage(a: TokenUsage, b: TokenUsage): TokenUsage {
@@ -371,6 +446,44 @@ function delay(ms: number, signal?: AbortSignal): Promise<void> {
       clearTimeout(timer);
       reject(new Error('Aborted'));
     }, { once: true });
+  });
+}
+
+function spawnAndCapture(
+  command: string,
+  args: string[],
+  opts: { cwd: string; env: NodeJS.ProcessEnv; signal: AbortSignal },
+): Promise<{ stdout: string; stderr: string; code: number | null }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd: opts.cwd,
+      env: opts.env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    let stdout = '';
+    let stderr = '';
+    child.stdout?.on('data', (chunk: Buffer) => { stdout += chunk.toString(); });
+    child.stderr?.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
+
+    const onAbort = () => {
+      child.kill('SIGTERM');
+      reject(new AgentError('Aborted'));
+    };
+    if (opts.signal.aborted) {
+      onAbort();
+      return;
+    }
+    opts.signal.addEventListener('abort', onAbort, { once: true });
+
+    child.on('error', (err) => {
+      opts.signal.removeEventListener('abort', onAbort);
+      reject(new AgentError(`Failed to spawn agent (${command}): ${err.message}`));
+    });
+    child.on('close', (code) => {
+      opts.signal.removeEventListener('abort', onAbort);
+      resolve({ stdout, stderr, code });
+    });
   });
 }
 
