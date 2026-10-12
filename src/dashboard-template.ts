@@ -1,4 +1,4 @@
-import type { OrchestratorSnapshot, SnapshotRunningEntry, SnapshotRetryEntry } from './types.js';
+import type { OrchestratorSnapshot, SnapshotRunningEntry, SnapshotRetryEntry, SnapshotTask } from './types.js';
 
 /**
  * Renders a rich, SSE-powered HTML dashboard for hatice.
@@ -28,6 +28,8 @@ export function renderLiveDashboard(snapshot: OrchestratorSnapshot): string {
         </tr>`
       ).join('')
     : '<tr><td colspan="4" class="py-8 text-center text-clay-400 italic text-sm">No retries pending</td></tr>';
+
+  const taskCards = renderTaskCards(snapshot.tasks ?? []);
 
   const totals = snapshot.totals;
   const costUsd = computeCostFromRunning(snapshot.running);
@@ -215,6 +217,15 @@ tailwind.config = {
     <div>Next: <span class="font-mono font-medium text-clay-700" id="poll-next">${(snapshot.polling.nextPollInMs / 1000).toFixed(1)}s</span></div>
   </div>
 
+  <!-- Visual task board -->
+  <section class="mb-10 animate-slide-up" style="animation-delay: 200ms">
+    <div class="flex items-center gap-3 mb-4">
+      <h2 class="font-display text-2xl text-clay-900">Task Board</h2>
+      <span class="text-xs font-mono text-clay-400 bg-sand-200/60 px-2 py-0.5 rounded" id="task-count">${(snapshot.tasks ?? []).length}</span>
+    </div>
+    <div id="task-board" class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">${taskCards}</div>
+  </section>
+
   <!-- Running agents -->
   <section class="mb-10 animate-slide-up" style="animation-delay: 250ms">
     <div class="flex items-center gap-3 mb-4">
@@ -321,6 +332,17 @@ tailwind.config = {
     if (s === 'done' || s === 'completed') return 'bg-sage-50 text-sage-600 border border-sage-200';
     return 'bg-ember-50 text-ember-600 border border-ember-200';
   }
+  function taskCard(t) {
+    var links = '';
+    if (t.previewUrl) links += '<a class="text-xs font-medium text-ember-600 hover:text-ember-800" target="_blank" rel="noreferrer" href="' + esc(t.previewUrl) + '">Preview ↗</a>';
+    if (t.prUrl) links += '<a class="text-xs font-medium text-sage-600 hover:text-sage-800" target="_blank" rel="noreferrer" href="' + esc(t.prUrl) + '">Pull request ↗</a>';
+    return '<article class="bg-white/75 backdrop-blur-sm border border-sand-200 rounded-2xl p-5 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md">' +
+      '<div class="flex items-start justify-between gap-3 mb-3"><div><div class="font-mono text-xs text-clay-400 mb-1">' + esc(t.identifier) + '</div><h3 class="font-semibold text-clay-900 leading-snug">' + esc(t.title) + '</h3></div>' +
+      '<span class="shrink-0 inline-flex items-center text-[10px] font-semibold uppercase tracking-wider px-2 py-1 rounded-full ' + stateBadgeClass(t.status) + '">' + esc(t.status) + '</span></div>' +
+      '<div class="flex items-center justify-between text-xs text-clay-400"><span>' + esc(t.lastEvent || 'Queued') + '</span><span class="font-mono">' + fmt(t.tokenUsage ? t.tokenUsage.totalTokens : 0) + ' tok</span></div>' +
+      (links ? '<div class="flex gap-4 mt-4 pt-3 border-t border-sand-200">' + links + '</div>' : '') +
+      '</article>';
+  }
   function flash(el) {
     if (!el) return;
     el.style.animation = 'none';
@@ -334,6 +356,13 @@ tailwind.config = {
     el = document.getElementById('stat-retrying'); if (el) { el.textContent = snap.retrying.length; flash(el.closest('.group')); }
     el = document.getElementById('stat-completed'); if (el) { el.textContent = snap.completed; flash(el.closest('.group')); }
     el = document.getElementById('stat-tokens'); if (el) { el.textContent = fmt(snap.totals.totalTokens); flash(el.closest('.group')); }
+
+    var board = document.getElementById('task-board');
+    if (board) {
+      board.innerHTML = (snap.tasks && snap.tasks.length) ? snap.tasks.map(taskCard).join('') : '<div class="md:col-span-2 lg:col-span-3 py-10 text-center text-clay-400 italic text-sm">No tasks dispatched yet</div>';
+      var count = document.getElementById('task-count'); if (count) count.textContent = (snap.tasks || []).length;
+      flash(board);
+    }
 
     el = document.getElementById('poll-interval'); if (el) el.textContent = (snap.polling.intervalMs / 1000).toFixed(0) + 's';
     el = document.getElementById('poll-next'); if (el) el.textContent = (snap.polling.nextPollInMs / 1000).toFixed(1) + 's';
@@ -480,4 +509,22 @@ function sumField(running: SnapshotRunningEntry[], field: 'cacheReadInputTokens'
 /** Compute total cost from running entries */
 function computeCostFromRunning(running: SnapshotRunningEntry[]): number {
   return running.reduce((sum, r) => sum + (r.tokenUsage.costUsd ?? 0), 0);
+}
+
+function renderTaskCards(tasks: SnapshotTask[]): string {
+  if (tasks.length === 0) {
+    return '<div class="md:col-span-2 lg:col-span-3 py-10 text-center text-clay-400 italic text-sm">No tasks dispatched yet</div>';
+  }
+  return tasks.map(task => {
+    const links = [
+      task.previewUrl ? `<a class="text-xs font-medium text-ember-600 hover:text-ember-800" target="_blank" rel="noreferrer" href="${esc(task.previewUrl)}">Preview ↗</a>` : '',
+      task.prUrl ? `<a class="text-xs font-medium text-sage-600 hover:text-sage-800" target="_blank" rel="noreferrer" href="${esc(task.prUrl)}">Pull request ↗</a>` : '',
+    ].filter(Boolean).join('');
+    return `<article class="bg-white/75 backdrop-blur-sm border border-sand-200 rounded-2xl p-5 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md">
+      <div class="flex items-start justify-between gap-3 mb-3"><div><div class="font-mono text-xs text-clay-400 mb-1">${esc(task.identifier)}</div><h3 class="font-semibold text-clay-900 leading-snug">${esc(task.title)}</h3></div>
+      <span class="shrink-0 inline-flex items-center text-[10px] font-semibold uppercase tracking-wider px-2 py-1 rounded-full ${stateBadgeClass(task.status)}">${esc(task.status)}</span></div>
+      <div class="flex items-center justify-between text-xs text-clay-400"><span>${esc(task.lastEvent ?? 'Queued')}</span><span class="font-mono">${fmt(task.tokenUsage.totalTokens)} tok</span></div>
+      ${links ? `<div class="flex gap-4 mt-4 pt-3 border-t border-sand-200">${links}</div>` : ''}
+    </article>`;
+  }).join('');
 }

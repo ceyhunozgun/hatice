@@ -126,6 +126,8 @@ export class Workspace {
           hatice_IDENTIFIER: context.identifier ?? '',
           hatice_WORKSPACE: workspacePath,
           hatice_TITLE: context.title ?? '',
+          hatice_PREVIEW_PORT: context.previewPort ?? '',
+          hatice_PREVIEW_URL: context.previewUrl ?? '',
         },
         stdio: ['ignore', 'pipe', 'pipe'],
       });

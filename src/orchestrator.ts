@@ -212,6 +212,8 @@ export class Orchestrator extends EventEmitter<haticeEvents> {
 
     try {
       const workspacePath = await this.workspace.ensureWorkspace(issue.identifier, issue.id, issue.title);
+      const previewUrl = this.previewUrl(issue);
+      this.state.registerTask(issue, workspacePath, previewUrl);
       const workflow = this.workflowStore.getCurrentWorkflow();
       if (!workflow) {
         throw new Error('No workflow loaded');
@@ -222,6 +224,8 @@ export class Orchestrator extends EventEmitter<haticeEvents> {
           issueId: issue.id,
           identifier: issue.identifier,
           title: issue.title ?? '',
+          previewPort: previewUrl ? String(new URL(previewUrl).port) : '',
+          previewUrl: previewUrl ?? '',
         });
       }
 
@@ -236,11 +240,14 @@ export class Orchestrator extends EventEmitter<haticeEvents> {
         promptTemplate: workflow.promptTemplate,
         attempt,
         maxTurns: this.config.agent.maxTurns,
+        provider: this.config.agent.provider,
+        codexConfig: this.config.codex,
         claudeConfig: this.config.claude,
         trackerConfig: this.config.tracker,
         abortController,
         onEvent: (id, name, detail) => {
           this.updateActivity(id);
+          this.state.updateTask(id, { lastEvent: name, lastEventAt: new Date() });
           this.emit('agent:event', id, name, detail);
         },
         onTokenUsage: (id, usage) => {
@@ -333,6 +340,7 @@ export class Orchestrator extends EventEmitter<haticeEvents> {
     switch (result.kind) {
       case 'normal':
         this.log.info({ issueId, turns: result.turnsCompleted }, 'Agent completed normally');
+        this.state.updateTask(issueId, { status: 'completed', prUrl: result.prUrl ?? null });
         this.emit('issue:completed', issueId, entry.identifier, result.usage);
         this.eventBus.emit('issue:completed', issueId, entry.identifier, result.usage);
         if (this.config.agent.retryOnNormalExit) {
@@ -355,6 +363,8 @@ export class Orchestrator extends EventEmitter<haticeEvents> {
                 `- Tokens: ${usage.totalTokens} (in: ${usage.inputTokens}, out: ${usage.outputTokens})`,
                 `- Cost: $${usage.costUsd.toFixed(4)}`,
               ] : []),
+              ...(this.state.tasks.get(issueId)?.previewUrl ? [`- Preview: ${this.state.tasks.get(issueId)!.previewUrl}`] : []),
+              ...(result.prUrl ? [`- Pull request: ${result.prUrl}`] : []),
             ].join('\n');
             await this.tracker.createComment(issueId, comment);
             this.log.info({ issueId }, 'Posted completion comment to tracker');
@@ -376,6 +386,7 @@ export class Orchestrator extends EventEmitter<haticeEvents> {
         break;
 
       case 'error':
+        this.state.updateTask(issueId, { status: 'failed', lastEvent: result.error.message });
         this.log.error({ issueId, err: result.error, attempt: result.attempt }, 'Agent failed');
         this.emit('issue:failed', issueId, entry.identifier, result.error);
         this.eventBus.emit('issue:failed', issueId, entry.identifier, result.error);
@@ -511,5 +522,16 @@ export class Orchestrator extends EventEmitter<haticeEvents> {
       // Fail open: keep all running agents on reconciliation error
       this.log.error({ err: e }, 'Reconciliation failed, keeping all agents running');
     }
+  }
+
+  private previewUrl(issue: Issue): string | null {
+    if (!this.config.preview?.enabled) return null;
+    const match = issue.identifier.match(/#(\d+)$/);
+    const offset = match ? Number(match[1]) : Math.abs(this.hashIdentifier(issue.identifier)) % 1000;
+    return `http://${this.config.preview.host}:${this.config.preview.basePort + offset}`;
+  }
+
+  private hashIdentifier(identifier: string): number {
+    return Array.from(identifier).reduce((hash, char) => ((hash * 31) + char.charCodeAt(0)) | 0, 7);
   }
 }

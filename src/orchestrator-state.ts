@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events';
 import type {
   RunningEntry, RetryState, TokenUsage, AggregateTotals,
-  OrchestratorSnapshot, SnapshotRunningEntry, SnapshotRetryEntry,
+  OrchestratorSnapshot, SnapshotRunningEntry, SnapshotRetryEntry, SnapshotTask, Issue,
 } from './types.js';
 import { emptyAggregateTotals } from './types.js';
 
@@ -10,6 +10,7 @@ export class OrchestratorState extends EventEmitter {
   readonly claimed = new Set<string>();
   readonly completed = new Set<string>();
   readonly retryAttempts = new Map<string, RetryState>();
+  readonly tasks = new Map<string, SnapshotTask>();
   totals: AggregateTotals = emptyAggregateTotals();
 
   private maxConcurrentAgents: number;
@@ -35,6 +36,41 @@ export class OrchestratorState extends EventEmitter {
 
   addRunning(entry: RunningEntry): void {
     this.running.set(entry.issueId, entry);
+    const task = this.tasks.get(entry.issueId);
+    if (task) {
+      task.status = 'running';
+      task.attempt = entry.attempt;
+      task.state = entry.state;
+    }
+  }
+
+  registerTask(issue: Issue, workspacePath: string, previewUrl: string | null): void {
+    const existing = this.tasks.get(issue.id);
+    if (existing) {
+      Object.assign(existing, { state: issue.state, workspacePath, previewUrl: previewUrl ?? existing.previewUrl, status: 'running' });
+      return;
+    }
+    this.tasks.set(issue.id, {
+      issueId: issue.id,
+      identifier: issue.identifier,
+      title: issue.title,
+      state: issue.state,
+      status: 'running',
+      issueUrl: issue.url,
+      workspacePath,
+      previewUrl,
+      prUrl: null,
+      attempt: 1,
+      runtimeSeconds: 0,
+      tokenUsage: { inputTokens: 0, outputTokens: 0, totalTokens: 0, cacheReadInputTokens: 0, cacheCreationInputTokens: 0, costUsd: 0 },
+      lastEvent: null,
+      lastEventAt: null,
+    });
+  }
+
+  updateTask(issueId: string, update: Partial<SnapshotTask>): void {
+    const task = this.tasks.get(issueId);
+    if (task) Object.assign(task, update);
   }
 
   removeRunning(issueId: string): RunningEntry | undefined {
@@ -62,6 +98,7 @@ export class OrchestratorState extends EventEmitter {
     if (entry) {
       entry.tokenUsage = usage;
     }
+    this.updateTask(issueId, { tokenUsage: { ...usage } });
     this.totals.inputTokens += usage.inputTokens;
     this.totals.outputTokens += usage.outputTokens;
     this.totals.totalTokens += usage.totalTokens;
@@ -90,6 +127,7 @@ export class OrchestratorState extends EventEmitter {
 
   scheduleRetry(state: RetryState): void {
     this.retryAttempts.set(state.issueId, state);
+    this.updateTask(state.issueId, { status: 'retrying', attempt: state.attempt, lastEvent: state.lastError });
   }
 
   cancelRetry(issueId: string): void {
@@ -120,6 +158,12 @@ export class OrchestratorState extends EventEmitter {
         lastEvent: entry.lastEvent,
         lastEventAt: entry.lastEventAt,
       });
+      this.updateTask(entry.issueId, {
+        runtimeSeconds: (now - entry.startedAt.getTime()) / 1000,
+        tokenUsage: { ...entry.tokenUsage },
+        lastEvent: entry.lastEvent,
+        lastEventAt: entry.lastEventAt,
+      });
     }
 
     const retrying: SnapshotRetryEntry[] = [];
@@ -139,6 +183,7 @@ export class OrchestratorState extends EventEmitter {
       completed: this.completed.size,
       totals: { ...this.totals },
       polling: { intervalMs: 0, nextPollInMs: 0 },
+      tasks: Array.from(this.tasks.values()).map(task => ({ ...task, tokenUsage: { ...task.tokenUsage } })),
     };
   }
 }

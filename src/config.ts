@@ -27,6 +27,12 @@ const workspaceSchema = z.object({
   rootDir: z.string(),
 });
 
+const previewSchema = z.object({
+  enabled: z.boolean().default(false),
+  basePort: z.number().default(3100),
+  host: z.string().default('127.0.0.1'),
+});
+
 const hooksSchema = z.object({
   afterCreate: z.string().nullable().default(null),
   beforeRun: z.string().nullable().default(null),
@@ -36,11 +42,20 @@ const hooksSchema = z.object({
 });
 
 const agentSchema = z.object({
+  provider: z.enum(['claude', 'codex']).default('claude'),
   maxConcurrentAgents: z.number().default(10),
   maxTurns: z.number().default(20),
   maxRetryBackoffMs: z.number().default(300_000),
   maxConcurrentAgentsByState: z.record(z.string(), z.number()).default({}),
   retryOnNormalExit: z.boolean().default(false),
+});
+
+const codexSchema = z.object({
+  path: z.string().default('codex'),
+  model: z.string().nullable().default(null),
+  sandbox: z.enum(['read-only', 'workspace-write', 'danger-full-access']).default('workspace-write'),
+  approvalPolicy: z.enum(['on-request', 'never']).default('never'),
+  ephemeral: z.boolean().default(false),
 });
 
 const claudeSchema = z.object({
@@ -66,6 +81,7 @@ const haticeConfigSchema = z.object({
   tracker: trackerSchema,
   polling: pollingSchema.default({ intervalMs: 30_000 }),
   workspace: workspaceSchema,
+  preview: previewSchema.default({ enabled: false, basePort: 3100, host: '127.0.0.1' }),
   hooks: hooksSchema.default({
     afterCreate: null,
     beforeRun: null,
@@ -74,6 +90,7 @@ const haticeConfigSchema = z.object({
     timeoutMs: 60_000,
   }),
   agent: agentSchema.default({
+    provider: 'claude',
     maxConcurrentAgents: 10,
     maxTurns: 20,
     maxRetryBackoffMs: 300_000,
@@ -92,6 +109,13 @@ const haticeConfigSchema = z.object({
     claudeCodePath: null,
     autoRespondToInput: true,
     dryRun: false,
+  }),
+  codex: codexSchema.default({
+    path: 'codex',
+    model: null,
+    sandbox: 'workspace-write',
+    approvalPolicy: 'never',
+    ephemeral: false,
   }),
   server: serverSchema.default({ port: null, host: '127.0.0.1' }),
 });

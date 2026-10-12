@@ -66,7 +66,7 @@ export interface AggregateTotals {
 }
 
 export type WorkerResult =
-  | { kind: 'normal'; issueId: string; turnsCompleted: number; usage: TokenUsage; durationMs: number }
+  | { kind: 'normal'; issueId: string; turnsCompleted: number; usage: TokenUsage; durationMs: number; prUrl?: string | null }
   | { kind: 'error'; issueId: string; error: Error; attempt: number; durationMs: number }
   | { kind: 'cancelled'; issueId: string; reason: string };
 
@@ -75,9 +75,11 @@ export interface haticeConfig {
   tracker: TrackerConfig;
   polling: PollingConfig;
   workspace: WorkspaceConfig;
+  preview?: PreviewConfig;
   hooks: HooksConfig;
   agent: AgentConfig;
   claude: ClaudeConfig;
+  codex?: CodexConfig;
   server: ServerConfig;
 }
 
@@ -99,6 +101,12 @@ export interface WorkspaceConfig {
   rootDir: string;
 }
 
+export interface PreviewConfig {
+  enabled: boolean;
+  basePort: number;
+  host: string;
+}
+
 export interface HooksConfig {
   afterCreate: string | null;
   beforeRun: string | null;
@@ -108,11 +116,21 @@ export interface HooksConfig {
 }
 
 export interface AgentConfig {
+  /** Agent backend: Claude Code SDK (default) or Codex CLI */
+  provider: 'claude' | 'codex';
   maxConcurrentAgents: number;
   maxTurns: number;
   maxRetryBackoffMs: number;
   maxConcurrentAgentsByState: Record<string, number>;
   retryOnNormalExit: boolean;
+}
+
+export interface CodexConfig {
+  path: string;
+  model: string | null;
+  sandbox: 'read-only' | 'workspace-write' | 'danger-full-access';
+  approvalPolicy: 'on-request' | 'never';
+  ephemeral: boolean;
 }
 
 export interface ClaudeConfig {
@@ -153,12 +171,30 @@ export interface Workflow {
 export interface OrchestratorSnapshot {
   running: SnapshotRunningEntry[];
   retrying: SnapshotRetryEntry[];
+  tasks?: SnapshotTask[];
   completed: number;
   totals: AggregateTotals;
   polling: {
     intervalMs: number;
     nextPollInMs: number;
   };
+}
+
+export interface SnapshotTask {
+  issueId: string;
+  identifier: string;
+  title: string;
+  state: string;
+  status: 'running' | 'retrying' | 'completed' | 'failed';
+  issueUrl: string | null;
+  workspacePath: string | null;
+  previewUrl: string | null;
+  prUrl: string | null;
+  attempt: number;
+  runtimeSeconds: number;
+  tokenUsage: TokenUsage;
+  lastEvent: string | null;
+  lastEventAt: Date | null;
 }
 
 export interface SnapshotRunningEntry {
