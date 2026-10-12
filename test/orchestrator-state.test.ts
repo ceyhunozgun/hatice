@@ -259,10 +259,10 @@ describe('OrchestratorState', () => {
     expect(state.totals.outputTokens).toBe(50);
     expect(state.totals.totalTokens).toBe(150);
 
-    // Second update accumulates
+    // Repeated cumulative updates replace the live snapshot without inflating totals
     state.updateTokenUsage('issue-1', usage);
-    expect(state.totals.inputTokens).toBe(200);
-    expect(state.totals.outputTokens).toBe(100);
-    expect(state.totals.totalTokens).toBe(300);
+    expect(state.totals.inputTokens).toBe(100);
+    expect(state.totals.outputTokens).toBe(50);
+    expect(state.totals.totalTokens).toBe(150);
   });
 });

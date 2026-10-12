@@ -296,6 +296,7 @@ export class AgentRunner {
     let sessionId: string | null = null;
     let usage: TokenUsage | null = null;
     let usageReported = false;
+    let estimatedOutputTokens = 0;
     const processCodexLine = (line: string): void => {
       if (!line.trim()) return;
       try {
@@ -315,6 +316,20 @@ export class AgentRunner {
           };
           this.options.onTokenUsage?.(this.options.issue.id, usage);
           usageReported = true;
+        } else if (eventType !== 'thread.started') {
+          // Codex currently exposes authoritative usage only in
+          // turn.completed. Keep the running card useful by estimating output
+          // tokens from streamed JSON events; the final event replaces this
+          // estimate with the exact provider usage.
+          estimatedOutputTokens += estimateTokenCount(JSON.stringify(event));
+          this.options.onTokenUsage?.(this.options.issue.id, {
+            inputTokens: estimateTokenCount(prompt),
+            outputTokens: estimatedOutputTokens,
+            totalTokens: estimateTokenCount(prompt) + estimatedOutputTokens,
+            cacheReadInputTokens: 0,
+            cacheCreationInputTokens: 0,
+            costUsd: 0,
+          });
         }
         this.options.onEvent?.(this.options.issue.id, eventType, JSON.stringify(event).slice(0, 200));
         this.sessionLog?.info({ type: eventType }, 'Codex agent event');
@@ -472,6 +487,10 @@ function delay(ms: number, signal?: AbortSignal): Promise<void> {
       reject(new Error('Aborted'));
     }, { once: true });
   });
+}
+
+function estimateTokenCount(text: string): number {
+  return Math.max(1, Math.ceil(text.length / 4));
 }
 
 function spawnAndCapture(

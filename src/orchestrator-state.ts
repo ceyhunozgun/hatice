@@ -95,13 +95,17 @@ export class OrchestratorState extends EventEmitter {
 
   updateTokenUsage(issueId: string, usage: TokenUsage): void {
     const entry = this.running.get(issueId);
+    const previous = entry?.tokenUsage ?? this.tasks.get(issueId)?.tokenUsage;
     if (entry) {
       entry.tokenUsage = usage;
     }
     this.updateTask(issueId, { tokenUsage: { ...usage } });
-    this.totals.inputTokens += usage.inputTokens;
-    this.totals.outputTokens += usage.outputTokens;
-    this.totals.totalTokens += usage.totalTokens;
+    // Live providers may report cumulative estimates several times before
+    // their final authoritative usage arrives. Aggregate only the delta so
+    // the dashboard can update without inflating totals.
+    this.totals.inputTokens += usage.inputTokens - (previous?.inputTokens ?? 0);
+    this.totals.outputTokens += usage.outputTokens - (previous?.outputTokens ?? 0);
+    this.totals.totalTokens += usage.totalTokens - (previous?.totalTokens ?? 0);
   }
 
   availableSlots(state?: string): number {
