@@ -14,7 +14,7 @@ preview:
   host: 127.0.0.1
 hooks:
   afterCreate: "gh repo clone ceyhunozgun/agent-tests . && npm install"
-  beforeRun: "(PORT=\"$hatice_PREVIEW_PORT\" nohup npm start > .hatice-preview.log 2>&1 & echo $! > .hatice-preview.pid)"
+  beforeRun: "(PORT=\"$hatice_PREVIEW_PORT\" nohup node --watch src/index.js > .hatice-preview.log 2>&1 & echo $! > .hatice-preview.pid)"
   beforeRemove: "if [ -f .hatice-preview.pid ]; then kill $(cat .hatice-preview.pid) 2>/dev/null || true; fi"
 polling:
   intervalMs: 15000
@@ -47,4 +47,6 @@ Solve the following GitHub issue:
 - Push the branch to `origin`
 - Create a GitHub pull request targeting `main`, with `Closes #<number>` in the body
 - Keep the local app preview running while the task is active and mention its preview URL in the pull request description
+- The preview server runs in watch mode: add the card first so it shows its red HTTP 404 state, then implement the endpoint and let the watcher reload the server so the card turns green without a manual restart
+- Poll the endpoint every 1 second; on success show the returned value and the response `Date` header, and on failure show a prominent red `ERROR` with the HTTP status
 - Prefer small, focused changes over large rewrites
